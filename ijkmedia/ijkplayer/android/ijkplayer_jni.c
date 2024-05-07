@@ -1126,8 +1126,18 @@ LABEL_RETURN:
     ijkmp_dec_ref_p(&mp);
     return;
 }
+extern jobject gCallbackObj;
 
+IjkMediaPlayer_setByteCallback(JNIEnv *env, jclass clazz,jobject callback){
+    // (*env)->DeleteGlobalRef(env,gCallbackObj);
+    const char* a = callback ? "true" : "false";
+    ALOGD("MY_TEST,before setByteCallback:%s",a);
+    gCallbackObj = (*env)->NewGlobalRef(env,callback);
 
+    const char* b = gCallbackObj ? "true" : "false";
+
+    ALOGD("MY_TEST,after setByteCallback:%s",b);
+}
 
 
 
@@ -1180,6 +1190,7 @@ static JNINativeMethod g_methods[] = {
 
     { "native_setLogLevel",     "(I)V",                     (void *) IjkMediaPlayer_native_setLogLevel },
     { "_setFrameAtTime",        "(Ljava/lang/String;JJII)V", (void *) IjkMediaPlayer_setFrameAtTime },
+    { "setByteCallback",        "(Ljava/lang/Object;)V",    (void *) IjkMediaPlayer_setByteCallback},
 };
 
 JNIEXPORT jint JNI_OnLoad(JavaVM *vm, void *reserved)

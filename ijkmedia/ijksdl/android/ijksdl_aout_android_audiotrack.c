@@ -69,6 +69,8 @@ typedef struct SDL_Aout_Opaque {
     volatile bool speed_changed;
 } SDL_Aout_Opaque;
 
+jobject gCallbackObj;
+//extern jobject gCallbackObj;
 static int aout_thread_n(JNIEnv *env, SDL_Aout *aout)
 {
     SDL_Aout_Opaque *opaque = aout->opaque;
@@ -77,6 +79,13 @@ static int aout_thread_n(JNIEnv *env, SDL_Aout *aout)
     void *userdata = opaque->spec.userdata;
     uint8_t *buffer = opaque->buffer;
     int copy_size = 256;
+    jmethodID callbackMethod = NULL;
+    const char* xx = gCallbackObj ? "true" : "false";
+    ALOGD("MY_TEST,gCallbackObj:%s",xx);
+    if(gCallbackObj){
+        jclass callbackClass = (*env)->GetObjectClass(env,gCallbackObj);
+        callbackMethod = (*env)->GetMethodID(env,callbackClass, "onByteArrayCallback", "([B)V");
+    }
 
     assert(atrack);
     assert(buffer);
@@ -116,6 +125,17 @@ static int aout_thread_n(JNIEnv *env, SDL_Aout *aout)
         SDL_UnlockMutex(opaque->wakeup_mutex);
 
         audio_cblk(userdata, buffer, copy_size);
+        const char* a = gCallbackObj ? "true" : "false";
+        const char* b = callbackMethod ? "true" : "false";
+        ALOGE("MY_TEST,gCallbackObj: %s ,callbackMethod: %s",a,b);
+        if(gCallbackObj && callbackMethod){
+            ALOGE("MY_TEST,callback data size:%d",copy_size);
+            jbyteArray byteArray = (*env)->NewByteArray(env,copy_size);
+            (*env)->SetByteArrayRegion(env,byteArray,0,copy_size,buffer);
+            (*env)->CallVoidMethod(env,gCallbackObj,callbackMethod,byteArray);
+            (*env)->DeleteLocalRef(env,byteArray);
+        }
+        // ALOGE("get data %d",copy_size);
         if (opaque->need_flush) {
             SDL_Android_AudioTrack_flush(env, atrack);
             opaque->need_flush = false;
