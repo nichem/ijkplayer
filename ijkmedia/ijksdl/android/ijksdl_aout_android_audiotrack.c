@@ -32,6 +32,7 @@
 #include "../ijksdl_aout_internal.h"
 #include "ijksdl_android_jni.h"
 #include "android_audiotrack.h"
+#include "../../ijkplayer/ff_ffplay_def.h"
 
 #ifdef SDLTRACE
 #undef SDLTRACE
@@ -70,6 +71,83 @@ typedef struct SDL_Aout_Opaque {
 } SDL_Aout_Opaque;
 
 jobject gCallbackObj;
+static double get_clock(Clock *c)
+{
+    if (*c->queue_serial != c->serial)
+        return NAN;
+    if (c->paused) {
+        return c->pts;
+    } else {
+        double time = av_gettime_relative() / 1000000.0;
+        return c->pts_drift + time - (time - c->last_updated) * (1.0 - c->speed);
+    }
+}
+static int get_master_sync_type(VideoState *is) {
+    if (is->av_sync_type == AV_SYNC_VIDEO_MASTER) {
+        if (is->video_st)
+            return AV_SYNC_VIDEO_MASTER;
+        else
+            return AV_SYNC_AUDIO_MASTER;
+    } else if (is->av_sync_type == AV_SYNC_AUDIO_MASTER) {
+        if (is->audio_st)
+            return AV_SYNC_AUDIO_MASTER;
+        else
+            return AV_SYNC_EXTERNAL_CLOCK;
+    } else {
+        return AV_SYNC_EXTERNAL_CLOCK;
+    }
+}
+static double get_master_clock(VideoState *is)
+{
+    double val;
+
+    switch (get_master_sync_type(is)) {
+        case AV_SYNC_VIDEO_MASTER:
+            val = get_clock(&is->vidclk);
+            break;
+        case AV_SYNC_AUDIO_MASTER:
+            val = get_clock(&is->audclk);
+            break;
+        default:
+            val = get_clock(&is->extclk);
+            break;
+    }
+    return val;
+}
+long ffp_get_current_position_l(FFPlayer *ffp)
+{
+    assert(ffp);
+    VideoState *is = ffp->is;
+    if (!is || !is->ic)
+        return 0;
+
+    int64_t start_time = is->ic->start_time;
+    int64_t start_diff = 0;
+    if (start_time > 0 && start_time != AV_NOPTS_VALUE)
+        start_diff = fftime_to_milliseconds(start_time);
+
+    int64_t pos = 0;
+    double pos_clock = get_master_clock(is);
+    if (isnan(pos_clock)) {
+        pos = fftime_to_milliseconds(is->seek_pos);
+    } else {
+        pos = pos_clock * 1000;
+    }
+
+    // If using REAL time and not ajusted, then return the real pos as calculated from the stream
+    // the use case for this is primarily when using a custom non-seekable data source that starts
+    // with a buffer that is NOT the start of the stream.  We want the get_current_position to
+    // return the time in the stream, and not the player's internal clock.
+    if (ffp->no_time_adjust) {
+        return (long)pos;
+    }
+
+    if (pos < 0 || pos < start_diff)
+        return 0;
+
+    int64_t adjust_pos = pos - start_diff;
+    return (long)adjust_pos;
+}
 //extern jobject gCallbackObj;
 static int aout_thread_n(JNIEnv *env, SDL_Aout *aout)
 {
@@ -134,6 +212,11 @@ static int aout_thread_n(JNIEnv *env, SDL_Aout *aout)
             (*env)->SetByteArrayRegion(env,byteArray,0,copy_size,buffer);
             (*env)->CallVoidMethod(env,gCallbackObj,callbackMethod,byteArray);
             (*env)->DeleteLocalRef(env,byteArray);
+
+            FFPlayer* ffp = (FFPlayer*) userdata;
+            VideoState *is = ffp->is;
+            long pos = ffp_get_current_position_l(ffp);
+            ALOGE("MY_TEST curpos: %ld",pos);
         }
         // ALOGE("get data %d",copy_size);
         if (opaque->need_flush) {
