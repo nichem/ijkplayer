@@ -70,85 +70,86 @@ typedef struct SDL_Aout_Opaque {
     volatile bool speed_changed;
 } SDL_Aout_Opaque;
 
-jobject gCallbackObj;
-static double get_clock(Clock *c)
-{
-    if (*c->queue_serial != c->serial)
-        return NAN;
-    if (c->paused) {
-        return c->pts;
-    } else {
-        double time = av_gettime_relative() / 1000000.0;
-        return c->pts_drift + time - (time - c->last_updated) * (1.0 - c->speed);
-    }
-}
-static int get_master_sync_type(VideoState *is) {
-    if (is->av_sync_type == AV_SYNC_VIDEO_MASTER) {
-        if (is->video_st)
-            return AV_SYNC_VIDEO_MASTER;
-        else
-            return AV_SYNC_AUDIO_MASTER;
-    } else if (is->av_sync_type == AV_SYNC_AUDIO_MASTER) {
-        if (is->audio_st)
-            return AV_SYNC_AUDIO_MASTER;
-        else
-            return AV_SYNC_EXTERNAL_CLOCK;
-    } else {
-        return AV_SYNC_EXTERNAL_CLOCK;
-    }
-}
-static double get_master_clock(VideoState *is)
-{
-    double val;
+// jobject gCallbackObj;
+// static double get_clock(Clock *c)
+// {
+//     if (*c->queue_serial != c->serial)
+//         return NAN;
+//     if (c->paused) {
+//         return c->pts;
+//     } else {
+//         double time = av_gettime_relative() / 1000000.0;
+//         return c->pts_drift + time - (time - c->last_updated) * (1.0 - c->speed);
+//     }
+// }
+// static int get_master_sync_type(VideoState *is) {
+//     if (is->av_sync_type == AV_SYNC_VIDEO_MASTER) {
+//         if (is->video_st)
+//             return AV_SYNC_VIDEO_MASTER;
+//         else
+//             return AV_SYNC_AUDIO_MASTER;
+//     } else if (is->av_sync_type == AV_SYNC_AUDIO_MASTER) {
+//         if (is->audio_st)
+//             return AV_SYNC_AUDIO_MASTER;
+//         else
+//             return AV_SYNC_EXTERNAL_CLOCK;
+//     } else {
+//         return AV_SYNC_EXTERNAL_CLOCK;
+//     }
+// }
+// static double get_master_clock(VideoState *is)
+// {
+//     double val;
 
-    switch (get_master_sync_type(is)) {
-        case AV_SYNC_VIDEO_MASTER:
-            val = get_clock(&is->vidclk);
-            break;
-        case AV_SYNC_AUDIO_MASTER:
-            val = get_clock(&is->audclk);
-            break;
-        default:
-            val = get_clock(&is->extclk);
-            break;
-    }
-    return val;
-}
-long ffp_get_current_position_l(FFPlayer *ffp)
-{
-    assert(ffp);
-    VideoState *is = ffp->is;
-    if (!is || !is->ic)
-        return 0;
+//     switch (get_master_sync_type(is)) {
+//         case AV_SYNC_VIDEO_MASTER:
+//             val = get_clock(&is->vidclk);
+//             break;
+//         case AV_SYNC_AUDIO_MASTER:
+//             val = get_clock(&is->audclk);
+//             break;
+//         default:
+//             val = get_clock(&is->extclk);
+//             break;
+//     }
+//     return val;
+// }
+// long ffp_get_current_position_l(FFPlayer *ffp)
+// {
+//     assert(ffp);
+//     VideoState *is = ffp->is;
+//     if (!is || !is->ic)
+//         return 0;
 
-    int64_t start_time = is->ic->start_time;
-    int64_t start_diff = 0;
-    if (start_time > 0 && start_time != AV_NOPTS_VALUE)
-        start_diff = fftime_to_milliseconds(start_time);
+//     int64_t start_time = is->ic->start_time;
+//     int64_t start_diff = 0;
+//     if (start_time > 0 && start_time != AV_NOPTS_VALUE)
+//         start_diff = fftime_to_milliseconds(start_time);
 
-    int64_t pos = 0;
-    double pos_clock = get_master_clock(is);
-    if (isnan(pos_clock)) {
-        pos = fftime_to_milliseconds(is->seek_pos);
-    } else {
-        pos = pos_clock * 1000;
-    }
+//     int64_t pos = 0;
+//     double pos_clock = get_master_clock(is);
+//     if (isnan(pos_clock)) {
+//         pos = fftime_to_milliseconds(is->seek_pos);
+//     } else {
+//         pos = pos_clock * 1000;
+//     }
 
-    // If using REAL time and not ajusted, then return the real pos as calculated from the stream
-    // the use case for this is primarily when using a custom non-seekable data source that starts
-    // with a buffer that is NOT the start of the stream.  We want the get_current_position to
-    // return the time in the stream, and not the player's internal clock.
-    if (ffp->no_time_adjust) {
-        return (long)pos;
-    }
+//     // If using REAL time and not ajusted, then return the real pos as calculated from the stream
+//     // the use case for this is primarily when using a custom non-seekable data source that starts
+//     // with a buffer that is NOT the start of the stream.  We want the get_current_position to
+//     // return the time in the stream, and not the player's internal clock.
+//     if (ffp->no_time_adjust) {
+//         return (long)pos;
+//     }
 
-    if (pos < 0 || pos < start_diff)
-        return 0;
+//     if (pos < 0 || pos < start_diff)
+//         return 0;
 
-    int64_t adjust_pos = pos - start_diff;
-    return (long)adjust_pos;
-}
+//     int64_t adjust_pos = pos - start_diff;
+//     return (long)adjust_pos;
+// }
 //extern jobject gCallbackObj;
+// int xxxx_copy_size = 256;
 static int aout_thread_n(JNIEnv *env, SDL_Aout *aout)
 {
     SDL_Aout_Opaque *opaque = aout->opaque;
@@ -156,14 +157,15 @@ static int aout_thread_n(JNIEnv *env, SDL_Aout *aout)
     SDL_AudioCallback audio_cblk = opaque->spec.callback;
     void *userdata = opaque->spec.userdata;
     uint8_t *buffer = opaque->buffer;
+    // int copy_size = xxxx_copy_size;
     int copy_size = 256;
-    jmethodID callbackMethod = NULL;
-    const char* xx = gCallbackObj ? "true" : "false";
-    ALOGD("MY_TEST,gCallbackObj:%s",xx);
-    if(gCallbackObj){
-        jclass callbackClass = (*env)->GetObjectClass(env,gCallbackObj);
-        callbackMethod = (*env)->GetMethodID(env,callbackClass, "onByteArrayCallback", "([B)V");
-    }
+    // jmethodID callbackMethod = NULL;
+    // const char* xx = gCallbackObj ? "true" : "false";
+    // ALOGD("MY_TEST,gCallbackObj:%s",xx);
+    // if(gCallbackObj){
+    //     jclass callbackClass = (*env)->GetObjectClass(env,gCallbackObj);
+    //     callbackMethod = (*env)->GetMethodID(env,callbackClass, "onByteArrayCallback", "([BJ)V");
+    // }
 
     assert(atrack);
     assert(buffer);
@@ -203,21 +205,19 @@ static int aout_thread_n(JNIEnv *env, SDL_Aout *aout)
         SDL_UnlockMutex(opaque->wakeup_mutex);
 
         audio_cblk(userdata, buffer, copy_size);
-        const char* a = gCallbackObj ? "true" : "false";
-        const char* b = callbackMethod ? "true" : "false";
-        ALOGE("MY_TEST,gCallbackObj: %s ,callbackMethod: %s",a,b);
-        if(gCallbackObj && callbackMethod){
-            ALOGE("MY_TEST,callback data size:%d",copy_size);
-            jbyteArray byteArray = (*env)->NewByteArray(env,copy_size);
-            (*env)->SetByteArrayRegion(env,byteArray,0,copy_size,buffer);
-            (*env)->CallVoidMethod(env,gCallbackObj,callbackMethod,byteArray);
-            (*env)->DeleteLocalRef(env,byteArray);
-
-            FFPlayer* ffp = (FFPlayer*) userdata;
-            VideoState *is = ffp->is;
-            long pos = ffp_get_current_position_l(ffp);
-            ALOGE("MY_TEST curpos: %ld",pos);
-        }
+        // const char* a = gCallbackObj ? "true" : "false";
+        // const char* b = callbackMethod ? "true" : "false";
+        // ALOGE("MY_TEST,gCallbackObj: %s ,callbackMethod: %s",a,b);
+        // if(gCallbackObj && callbackMethod){
+        //     ALOGE("MY_TEST,callback data size:%d",copy_size);
+        //     FFPlayer* ffp = (FFPlayer*) userdata;
+        //     long pos = ffp_get_current_position_l(ffp);
+        //     ALOGE("MY_TEST curpos: %ld s_rate:",pos);
+        //     jbyteArray byteArray = (*env)->NewByteArray(env,copy_size);
+        //     (*env)->SetByteArrayRegion(env,byteArray,0,copy_size,buffer);
+        //     (*env)->CallVoidMethod(env,gCallbackObj,callbackMethod,byteArray,(jlong)pos);
+        //     (*env)->DeleteLocalRef(env,byteArray);
+        // }
         // ALOGE("get data %d",copy_size);
         if (opaque->need_flush) {
             SDL_Android_AudioTrack_flush(env, atrack);

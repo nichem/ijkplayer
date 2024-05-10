@@ -2720,6 +2720,99 @@ static void sdl_audio_callback(void *opaque, Uint8 *stream, int len)
     }
 }
 
+void sdl_audio_callback2(void *opaque, Uint8 *stream, int len)
+{
+    //用来解码的
+    FFPlayer *ffp = opaque;
+    VideoState *is = ffp->is;
+    int audio_size, len1;
+    if (!ffp || !is) {
+        memset(stream, 0, len);
+        return;
+    }
+
+    ffp->audio_callback_time = av_gettime_relative();
+
+    if (ffp->pf_playback_rate_changed) {
+        ffp->pf_playback_rate_changed = 0;
+#if defined(__ANDROID__)
+        if (!ffp->soundtouch_enable) {
+            SDL_AoutSetPlaybackRate(ffp->aout, ffp->pf_playback_rate);
+        }
+#else
+        SDL_AoutSetPlaybackRate(ffp->aout, ffp->pf_playback_rate);
+#endif
+    }
+    if (ffp->pf_playback_volume_changed) {
+        ffp->pf_playback_volume_changed = 0;
+        SDL_AoutSetPlaybackVolume(ffp->aout, ffp->pf_playback_volume);
+    }
+
+    while (len > 0) {
+        if (is->audio_buf_index >= is->audio_buf_size) {
+           audio_size = audio_decode_frame(ffp);
+           if (audio_size < 0) {
+                /* if error, just output silence */
+               is->audio_buf = NULL;
+               is->audio_buf_size = SDL_AUDIO_MIN_BUFFER_SIZE / is->audio_tgt.frame_size * is->audio_tgt.frame_size;
+           } else {
+               if (is->show_mode != SHOW_MODE_VIDEO)
+                   update_sample_display(is, (int16_t *)is->audio_buf, audio_size);
+               is->audio_buf_size = audio_size;
+           }
+           is->audio_buf_index = 0;
+        }
+        if (is->auddec.pkt_serial != is->audioq.serial) {
+            is->audio_buf_index = is->audio_buf_size;
+            memset(stream, 0, len);
+            // stream += len;
+            // len = 0;
+            SDL_AoutFlushAudio(ffp->aout);
+            break;
+        }
+        len1 = is->audio_buf_size - is->audio_buf_index;
+        if (len1 > len)
+            len1 = len;
+        if (!is->muted && is->audio_buf && is->audio_volume == SDL_MIX_MAXVOLUME)
+            memcpy(stream, (uint8_t *)is->audio_buf + is->audio_buf_index, len1);
+        else {
+            memset(stream, 0, len1);
+            if (!is->muted && is->audio_buf)
+                SDL_MixAudio(stream, (uint8_t *)is->audio_buf + is->audio_buf_index, len1, is->audio_volume);
+        }
+        len -= len1;
+        stream += len1;
+        is->audio_buf_index += len1;
+    }
+    is->audio_write_buf_size = is->audio_buf_size - is->audio_buf_index;
+    /* Let's assume the audio driver that is used by SDL has two periods. */
+    if (!isnan(is->audio_clock)) {
+        set_clock_at(&is->audclk, is->audio_clock - (double)(is->audio_write_buf_size) / is->audio_tgt.bytes_per_sec - SDL_AoutGetLatencySeconds(ffp->aout), is->audio_clock_serial, ffp->audio_callback_time / 1000000.0);
+        sync_clock_to_slave(&is->extclk, &is->audclk);
+    }
+    if (!ffp->first_audio_frame_rendered) {
+        ffp->first_audio_frame_rendered = 1;
+        ffp_notify_msg1(ffp, FFP_MSG_AUDIO_RENDERING_START);
+    }
+
+    if (is->latest_audio_seek_load_serial == is->audio_clock_serial) {
+        int latest_audio_seek_load_serial = __atomic_exchange_n(&(is->latest_audio_seek_load_serial), -1, memory_order_seq_cst);
+        if (latest_audio_seek_load_serial == is->audio_clock_serial) {
+            if (ffp->av_sync_type == AV_SYNC_AUDIO_MASTER) {
+                ffp_notify_msg2(ffp, FFP_MSG_AUDIO_SEEK_RENDERING_START, 1);
+            } else {
+                ffp_notify_msg2(ffp, FFP_MSG_AUDIO_SEEK_RENDERING_START, 0);
+            }
+        }
+    }
+
+    if (ffp->render_wait_start && !ffp->start_on_prepared && is->pause_req) {
+        while (is->pause_req && !is->abort_request) {
+            SDL_Delay(20);
+        }
+    }
+}
+
 static int audio_open(FFPlayer *opaque, int64_t wanted_channel_layout, int wanted_nb_channels, int wanted_sample_rate, struct AudioParams *audio_hw_params)
 {
     FFPlayer *ffp = opaque;

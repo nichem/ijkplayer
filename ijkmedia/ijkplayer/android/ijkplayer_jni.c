@@ -39,6 +39,9 @@
 #include "ijksdl/android/ijksdl_android_jni.h"
 #include "ijksdl/android/ijksdl_codec_android_mediadef.h"
 #include "ijkavformat/ijkavformat.h"
+#include "ijkplayer.h"
+#include "ijkplayer_internal.h"
+#include "ff_ffplay_def.h"
 
 #define JNI_MODULE_PACKAGE      "tv/danmaku/ijk/media/player"
 #define JNI_CLASS_IJKPLAYER     "tv/danmaku/ijk/media/player/IjkMediaPlayer"
@@ -1126,18 +1129,38 @@ LABEL_RETURN:
     ijkmp_dec_ref_p(&mp);
     return;
 }
-extern jobject gCallbackObj;
+// extern jobject gCallbackObj;
 
-IjkMediaPlayer_setByteCallback(JNIEnv *env, jclass clazz,jobject callback){
-    // (*env)->DeleteGlobalRef(env,gCallbackObj);
-    const char* a = callback ? "true" : "false";
-    ALOGD("MY_TEST,before setByteCallback:%s",a);
-    gCallbackObj = (*env)->NewGlobalRef(env,callback);
+// IjkMediaPlayer_setByteCallback(JNIEnv *env, jobject thiz,jobject callback){
+//     // (*env)->DeleteGlobalRef(env,gCallbackObj);
+//     const char* a = callback ? "true" : "false";
+//     ALOGD("MY_TEST,before setByteCallback:%s",a);
+//     gCallbackObj = (*env)->NewGlobalRef(env,callback);
 
-    const char* b = gCallbackObj ? "true" : "false";
+//     const char* b = gCallbackObj ? "true" : "false";
 
-    ALOGD("MY_TEST,after setByteCallback:%s",b);
+//     ALOGD("MY_TEST,after setByteCallback:%s",b);
+// }
+
+// extern int xxxx_copy_size;
+// static void
+// IikMediaPlayer_setDecodeSize(JNIEnv *env, jobject thiz,jint decode_size){
+//     xxxx_copy_size = (int) decode_size;
+// }
+
+extern void sdl_audio_callback2(void *opaque, Uint8 *stream, int len);
+static void
+IikMediaPlayer_getDecodeData(JNIEnv *env, jobject thiz,jbyteArray buffer){
+    IjkMediaPlayer* mx = jni_get_media_player(env, thiz);
+    jsize len = (*env)->GetArrayLength(env,buffer);
+    jbyte *bytes = (*env)->GetByteArrayElements(env,buffer, NULL);
+    
+    sdl_audio_callback2(mx->ffplayer,(Uint8*)bytes,len);
+    (*env)->ReleaseByteArrayElements(env,buffer, bytes, 0);
+    
 }
+
+
 
 
 
@@ -1190,7 +1213,9 @@ static JNINativeMethod g_methods[] = {
 
     { "native_setLogLevel",     "(I)V",                     (void *) IjkMediaPlayer_native_setLogLevel },
     { "_setFrameAtTime",        "(Ljava/lang/String;JJII)V", (void *) IjkMediaPlayer_setFrameAtTime },
-    { "setByteCallback",        "(Ljava/lang/Object;)V",    (void *) IjkMediaPlayer_setByteCallback},
+    // { "setByteCallback",        "(Ljava/lang/Object;)V",    (void *) IjkMediaPlayer_setByteCallback},
+    // { "setDecodeSize",          "(I)V",                     (void *) IikMediaPlayer_setDecodeSize},
+    { "getDecodeData",          "([B)V",                    (void *) IikMediaPlayer_getDecodeData}
 };
 
 JNIEXPORT jint JNI_OnLoad(JavaVM *vm, void *reserved)
